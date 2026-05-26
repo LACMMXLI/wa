@@ -1,0 +1,80 @@
+# OpenWA - Coolify deployment
+#
+# Public service: dashboard:80
+# Internal service: openwa:2785
+#
+# The dashboard image uses dashboard/nginx.conf, which proxies /api and
+# /socket.io to the internal OpenWA API service.
+
+services:
+  openwa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - '2785'
+    environment:
+      NODE_ENV: production
+      PORT: 2785
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      DATABASE_TYPE: sqlite
+      DATABASE_NAME: /app/data/openwa.sqlite
+      DATABASE_SYNCHRONIZE: ${DATABASE_SYNCHRONIZE:-true}
+      DATABASE_LOGGING: ${DATABASE_LOGGING:-false}
+
+      ENGINE_TYPE: whatsapp-web.js
+      SESSION_DATA_PATH: /app/data/sessions
+      PUPPETEER_HEADLESS: ${PUPPETEER_HEADLESS:-true}
+      PUPPETEER_ARGS: --no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu
+
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/data/media
+
+      REDIS_ENABLED: 'false'
+      QUEUE_ENABLED: 'false'
+      CACHE_ENABLED: ${CACHE_ENABLED:-false}
+
+      WEBHOOK_TIMEOUT: ${WEBHOOK_TIMEOUT:-10000}
+      WEBHOOK_MAX_RETRIES: ${WEBHOOK_MAX_RETRIES:-3}
+      WEBHOOK_RETRY_DELAY: ${WEBHOOK_RETRY_DELAY:-5000}
+
+      RATE_LIMIT_TTL: ${RATE_LIMIT_TTL:-60}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+
+      PLUGINS_ENABLED: ${PLUGINS_ENABLED:-true}
+      PLUGINS_DIR: /app/data/plugins
+
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      BASE_URL: ${BASE_URL:-}
+      DASHBOARD_URL: ${DASHBOARD_URL:-}
+    volumes:
+      - openwa-data:/app/data
+    shm_size: '1gb'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://localhost:2785/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - '80'
+    depends_on:
+      openwa:
+        condition: service_healthy
+
+volumes:
+  openwa-data:
