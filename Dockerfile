@@ -13,8 +13,9 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package files
+# Copy package files and postinstall scripts
 COPY package*.json ./
+COPY scripts/ ./scripts/
 
 # Install all dependencies (including devDependencies for build)
 RUN npm ci
@@ -60,8 +61,9 @@ RUN groupadd -r openwa && useradd -r -g openwa openwa
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and postinstall scripts
 COPY package*.json ./
+COPY scripts/ ./scripts/
 
 # Install production dependencies only
 RUN npm ci --omit=dev && npm cache clean --force
