@@ -26,6 +26,11 @@ yarn-error.log*
 logs/
 *.log
 
+# Deployment archives
+*.tar
+*.tar.gz
+*.tgz
+
 # OS files
 .DS_Store
 .DS_Store?
