@@ -78,7 +78,7 @@ export class MessageService {
         { sessionId, source: 'MessageService' },
       );
 
-      throw error;
+      throw new BadRequestException(error instanceof Error ? error.message : String(error));
     }
   }
 

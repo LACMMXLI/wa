@@ -25,6 +25,18 @@ interface WebSocketEvents {
   onMessage?: (event: MessageEvent) => void;
 }
 
+interface WebSocketServerMessage {
+  type: 'subscribed' | 'unsubscribed' | 'event' | 'error' | 'pong';
+  payload?: {
+    event: string;
+    sessionId: string;
+    data: unknown;
+  };
+  code?: string;
+  message?: string;
+  timestamp: string;
+}
+
 // Use current origin for WebSocket (goes through nginx proxy in Docker)
 // Falls back to env var or localhost for development
 const SOCKET_URL = import.meta.env.VITE_WS_URL || window.location.origin;
@@ -63,6 +75,12 @@ export function useWebSocket(events: WebSocketEvents = {}) {
     socketRef.current.on('connect', () => {
       console.log('[WebSocket] Connected');
       setIsConnected(true);
+      socketRef.current?.emit('message', {
+        type: 'subscribe',
+        sessionId: '*',
+        events: ['*'],
+        requestId: `dashboard-${Date.now()}`,
+      });
     });
 
     socketRef.current.on('disconnect', () => {
@@ -92,22 +110,35 @@ export function useWebSocket(events: WebSocketEvents = {}) {
 
     const socket = socketRef.current;
 
-    if (events.onSessionStatus) {
-      socket.on('session:status', events.onSessionStatus);
-    }
+    const handleServerMessage = (message: WebSocketServerMessage) => {
+      if (message.type !== 'event' || !message.payload) return;
 
-    if (events.onQRCode) {
-      socket.on('session:qr', events.onQRCode);
-    }
+      const { event, sessionId, data } = message.payload;
+      const timestamp = message.timestamp || new Date().toISOString();
 
-    if (events.onMessage) {
-      socket.on('session:message', events.onMessage);
-    }
+      if (event === 'session.status' && events.onSessionStatus) {
+        const statusData = data as { status?: string };
+        if (statusData.status) {
+          events.onSessionStatus({ sessionId, status: statusData.status, timestamp });
+        }
+      }
+
+      if (event === 'session.qr' && events.onQRCode) {
+        const qrData = data as { qrCode?: string };
+        if (qrData.qrCode) {
+          events.onQRCode({ sessionId, qrCode: qrData.qrCode, timestamp });
+        }
+      }
+
+      if ((event === 'message.received' || event === 'message.sent') && events.onMessage) {
+        events.onMessage({ sessionId, message: data as Record<string, unknown>, timestamp });
+      }
+    };
+
+    socket.on('message', handleServerMessage);
 
     return () => {
-      socket.off('session:status');
-      socket.off('session:qr');
-      socket.off('session:message');
+      socket.off('message', handleServerMessage);
     };
   }, [events.onSessionStatus, events.onQRCode, events.onMessage]);
 

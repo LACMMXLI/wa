@@ -271,7 +271,8 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
 
   async sendTextMessage(chatId: string, text: string): Promise<MessageResult> {
     this.ensureReady();
-    const msg = await this.client!.sendMessage(chatId, text);
+    const resolvedChatId = await this.resolveChatId(chatId);
+    const msg = await this.client!.sendMessage(resolvedChatId, text);
     return {
       id: msg.id._serialized,
       timestamp: msg.timestamp,
@@ -296,6 +297,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
 
   private async sendMediaMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.ensureReady();
+    const resolvedChatId = await this.resolveChatId(chatId);
 
     let messageMedia: MessageMedia;
 
@@ -312,7 +314,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       messageMedia = new MessageMedia(media.mimetype, media.data.toString('base64'), media.filename);
     }
 
-    const msg = await this.client!.sendMessage(chatId, messageMedia, {
+    const msg = await this.client!.sendMessage(resolvedChatId, messageMedia, {
       caption: media.caption,
     });
 
@@ -384,13 +386,14 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
 
   async sendLocationMessage(chatId: string, location: LocationInput): Promise<MessageResult> {
     this.ensureReady();
+    const resolvedChatId = await this.resolveChatId(chatId);
     // Import Location class dynamically from whatsapp-web.js
     const { Location } = await import('whatsapp-web.js');
     const loc = new Location(location.latitude, location.longitude, {
       name: location.description || '',
       address: location.address || '',
     });
-    const msg = await this.client!.sendMessage(chatId, loc);
+    const msg = await this.client!.sendMessage(resolvedChatId, loc);
     return {
       id: msg.id._serialized,
       timestamp: msg.timestamp,
@@ -399,6 +402,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
 
   async sendContactMessage(chatId: string, contact: ContactCard): Promise<MessageResult> {
     this.ensureReady();
+    const resolvedChatId = await this.resolveChatId(chatId);
     // Create vCard format
     const vcard = [
       'BEGIN:VCARD',
@@ -408,7 +412,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       'END:VCARD',
     ].join('\n');
 
-    const msg = await this.client!.sendMessage(chatId, vcard, {
+    const msg = await this.client!.sendMessage(resolvedChatId, vcard, {
       parseVCards: true,
     });
     return {
@@ -419,6 +423,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
 
   async sendStickerMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.ensureReady();
+    const resolvedChatId = await this.resolveChatId(chatId);
     let messageMedia: MessageMedia;
 
     if (typeof media.data === 'string') {
@@ -431,7 +436,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       messageMedia = new MessageMedia(media.mimetype, media.data.toString('base64'), media.filename);
     }
 
-    const msg = await this.client!.sendMessage(chatId, messageMedia, {
+    const msg = await this.client!.sendMessage(resolvedChatId, messageMedia, {
       sendMediaAsSticker: true,
     });
     return {
@@ -919,5 +924,28 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     if (this.status !== EngineStatus.READY || !this.client) {
       throw new Error('WhatsApp client is not ready');
     }
+  }
+
+  private async resolveChatId(chatId: string): Promise<string> {
+    const normalizedChatId = chatId.trim();
+
+    if (
+      normalizedChatId.endsWith('@g.us') ||
+      normalizedChatId.endsWith('@newsletter') ||
+      normalizedChatId.endsWith('@broadcast') ||
+      normalizedChatId.endsWith('@lid')
+    ) {
+      return normalizedChatId;
+    }
+
+    if (normalizedChatId.endsWith('@c.us') || /^\d+$/.test(normalizedChatId)) {
+      const numberId = await this.client!.getNumberId(normalizedChatId);
+      if (!numberId?._serialized) {
+        throw new Error(`WhatsApp number is not registered or cannot be resolved: ${normalizedChatId}`);
+      }
+      return numberId._serialized;
+    }
+
+    return normalizedChatId;
   }
 }
